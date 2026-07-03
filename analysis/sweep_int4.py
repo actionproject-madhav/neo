@@ -1,6 +1,13 @@
 """One-off exploration script: sweep the INT4 clip-percentile and plot accuracy.
 Not part of the submission - used to pick INT4_CLIP_PERCENTILE in quantize.py.
+
+Run from anywhere with: python analysis/sweep_int4.py  (from the squeeze/ dir)
 """
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 import numpy as np
 import matplotlib
 matplotlib.use("Agg")
@@ -8,6 +15,8 @@ import matplotlib.pyplot as plt
 
 from model import W_FP32, B_FP32, EVAL_X, EVAL_Y, BASELINE_ACC, accuracy
 from quantize import _qrange, QModel
+
+OUT_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "int4_percentile_sweep.png")
 
 
 def quantize_with_percentile(W, bits, clip_percentile):
@@ -53,5 +62,5 @@ plt.title("INT4 accuracy vs calibration clip percentile")
 plt.legend()
 plt.grid(alpha=0.3)
 plt.tight_layout()
-plt.savefig("int4_percentile_sweep.png", dpi=150)
-print("saved int4_percentile_sweep.png")
+plt.savefig(OUT_PATH, dpi=150)
+print(f"saved {OUT_PATH}")

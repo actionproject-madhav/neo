@@ -65,7 +65,12 @@ def quantize(W, bits=8, per_channel=True, calib=None):
     # Avoid divide-by-zero for an all-zero row; scale doesn't matter then
     # since the row's integer weights will all be 0 anyway.
     amax = np.where(amax == 0, 1.0, amax)
-    scale = amax / qmax
+    # Round the scale to float16 *before* using it to quantize, not after.
+    # Otherwise the integers would be rounded against a full-precision scale
+    # while dequantization uses the float16-truncated one - a slightly
+    # different number - which can push a few elements outside the error
+    # bound implied by the scale actually stored.
+    scale = (amax / qmax).astype(np.float16).astype(np.float64)
 
     q = np.round(W / scale[:, None])
     q = np.clip(q, qmin, qmax).astype(np.int8)

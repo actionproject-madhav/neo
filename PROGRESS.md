@@ -32,3 +32,6 @@ Results:
 - All 3 visible INT8 tests still pass unchanged (bits=8 still uses true max, clip_percentile=100)
 
 Diagnostic-only, not required for submission: `analysis/sweep_int4.py` (uses matplotlib, not in requirements.txt) + `analysis/int4_percentile_sweep.png` (the chart it generates).
+
+## Bug fix — scale precision mismatch
+Found while checking the "numerical correctness" requirement: weights were rounded into integers using the full-precision scale, but the *stored* scale (used for dequant) was float16-truncated - a slightly different number. That let 2/288 elements land just outside the error bound implied by the actually-stored scale (worst case off by 0.0008). Fixed by rounding the scale to float16 *before* using it to quantize, so the same scale is used consistently both times. No change to accuracy or compression numbers, just closes the correctness gap.

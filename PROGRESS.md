@@ -41,3 +41,14 @@ Diagnostic-only, not required for submission: `analysis/sweep_int4.py` (uses mat
 
 ## Bug fix — scale precision mismatch
 Found while checking the "numerical correctness" requirement: weights were rounded into integers using the full-precision scale, but the *stored* scale (used for dequant) was float16-truncated - a slightly different number. That let 2/288 elements land just outside the error bound implied by the actually-stored scale (worst case off by 0.0008). Fixed by rounding the scale to float16 *before* using it to quantize, so the same scale is used consistently both times. No change to accuracy or compression numbers, just closes the correctness gap.
+
+## Edge-case audit
+Went looking specifically for silent-corruption bugs (wrong output, no error) rather than crashes. Found and fixed three, none of which affect the graded `bits=8`/`bits=4` paths on this dataset, but all were real:
+
+1. **`bits=16` silently wrapped around int8.** `q_weight` was always cast to `np.int8` regardless of `bits`, so values needing more than 8 bits would wrap (undefined-looking values, no error). Fixed with `_int_container_dtype(bits)`: int8 up to 8 bits, int16 up to 16, int32 up to 32, int64 beyond. `bits=8`/`4` still get `int8` exactly as before - unaffected.
+2. **`bits=1` divided by zero.** `qmax = 2^(bits-1) - 1 = 0` at `bits=1`, so `scale = amax/0 = inf`, silently quantizing every weight to 0 (a dead model) with only a buried `RuntimeWarning`. Fixed: `_qrange` now raises `ValueError` for `bits < 2`.
+3. **float16 scale can overflow/underflow for extreme weight magnitudes.** If a row's calibrated max-abs is too large (>~8.3M for int8) or too small (<~6e-5), casting the scale to float16 silently produces `inf` or `0`, again quantizing the row to zero without an error. Fixed: `quantize()` now raises `ValueError` if this happens instead of proceeding silently. Checked the actual margins on `W_FP32`: smallest scale is ~31x above the underflow floor (INT8) / ~414x (INT4), largest scale is many thousands of times below the overflow ceiling — so this never triggers on the real graded data, it's just insurance.
+
+Also explicitly tested (no bugs found): `per_channel=False` combined with `bits=4` (0.936 acc, no crash), `bits=2` (works, 4 distinct values, 0.983 acc), and the all-zero-row divide-by-zero guard (still correct, not a false positive of fix #3).
+
+All 3 visible tests + both accuracy/compression checks re-verified passing after every fix above.

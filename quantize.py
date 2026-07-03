@@ -29,11 +29,31 @@ class QModel:
 
 def _qrange(bits):
     """Signed symmetric integer range for `bits`-bit quantization."""
+    if bits < 2:
+        raise ValueError(f"bits must be >= 2 for signed symmetric quantization, got {bits}")
     qmax = 2 ** (bits - 1) - 1
     qmin = -(qmax + 1)
     return qmin, qmax
 
 
+def _int_container_dtype(bits):
+    """Smallest numpy signed integer dtype that can hold `bits`-bit values.
+
+    quantize() supports bits=8 (primary) and bits=4 (extra credit); this just
+    keeps larger bit-widths from silently overflowing/wrapping in a smaller
+    container instead of failing loudly or storing correctly.
+    """
+    if bits <= 8:
+        return np.int8
+    if bits <= 16:
+        return np.int16
+    if bits <= 32:
+        return np.int32
+    return np.int64
+
+#we use the percentile based approach to quantuze the weights as just using the max might lead to over fitting
+#the precentile sweep is done on the calibration set and the result is tested on the evaluatuiin set
+#what we are doing here is symmatric quantization and there's no zero point here
 def quantize(W, bits=8, per_channel=True, calib=None):
     """Quantize the weight matrix W (shape (C, D)) to `bits`-bit integers.
 
@@ -71,14 +91,27 @@ def quantize(W, bits=8, per_channel=True, calib=None):
     # while dequantization uses the float16-truncated one - a slightly
     # different number - which can push a few elements outside the error
     # bound implied by the scale actually stored.
-    scale = (amax / qmax).astype(np.float16).astype(np.float64)
+    scale_f16 = (amax / qmax).astype(np.float16)
+    if not np.all(np.isfinite(scale_f16)) or np.any(scale_f16 == 0):
+        # float16 range is roughly 6e-5 to 65504; a row whose calibrated
+        # max-abs falls outside scale_bits*qmax of that would silently
+        # overflow to inf or underflow to 0, quantizing the whole row to
+        # zero with no error raised. Fail loudly instead - this dataset's
+        # actual weight magnitudes are ~30-400x inside the safe range (see
+        # PROGRESS.md), so this should never trigger here, but it's cheap
+        # insurance against silently corrupting a row of weights.
+        raise ValueError(
+            "per-row scale over/underflowed float16 range - weight magnitudes "
+            "are outside what this quantization scheme supports"
+        )
+    scale = scale_f16.astype(np.float64)
 
     q = np.round(W / scale[:, None])
-    q = np.clip(q, qmin, qmax).astype(np.int8)
+    q = np.clip(q, qmin, qmax).astype(_int_container_dtype(bits))
 
     return QModel(q_weight=q, scale=scale.astype(np.float16), bits=bits)
 
-
+#this is just the forward pass, but now we have quantized weights instead of the original
 def forward_quant(X, qmodel, b):
     """Run the classifier using the quantized weights.
 
@@ -89,7 +122,7 @@ def forward_quant(X, qmodel, b):
     logits = X @ W_deq.T + np.asarray(b, dtype=np.float64)
     return np.argmax(logits, axis=1)
 
-
+#this is the count of the
 def stored_bits(qmodel):
     """Return the true number of bits used to store the quantized weights plus
     scales/zero-points. Used to compute the compression ratio against FP32."""

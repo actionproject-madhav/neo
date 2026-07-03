@@ -15,8 +15,11 @@ Checked results:
 Tests passing: `test_int8_accuracy_retention`, `test_returns_predictions_shape`
 Tests not run yet (need Phase 2): `test_int8_compression` (needs `stored_bits`)
 
-## Phase 2 — NOT STARTED
-`stored_bits()` still raises `NotImplementedError`. Need to add up weight bits + scale bits (16 bits/scale) and confirm ratio >= 3.5x.
+## Phase 2 — DONE
+`stored_bits()` = (bits per weight × num weights) + (16 bits × num scales).
+- fp32_bits = 9216, stored_bits = 2496, ratio = 3.69x (need >= 3.5x — passes)
+
+All 3 visible tests now pass: `test_int8_accuracy_retention`, `test_int8_compression`, `test_returns_predictions_shape`.
 
 ## Phase 3 — NOT STARTED
 INT4 with percentile-clipped calibration, not started.

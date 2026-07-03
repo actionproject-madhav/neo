@@ -68,4 +68,6 @@ def forward_quant(X, qmodel, b):
 def stored_bits(qmodel):
     """Return the true number of bits used to store the quantized weights plus
     scales/zero-points. Used to compute the compression ratio against FP32."""
-    raise NotImplementedError("Implement stored_bits")
+    weight_bits = qmodel.q_weight.size * qmodel.bits
+    scale_bits = qmodel.scale.size * SCALE_BITS
+    return weight_bits + scale_bits

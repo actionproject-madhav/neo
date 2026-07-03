@@ -12,10 +12,11 @@ SCALE_BITS = 16
 # row's scale and crush the other weights into a handful of buckets. Clipping
 # the calibration range to a percentile of |W| per row instead lets outliers
 # saturate while giving the bulk of the weights the resolution they need.
-# 90th percentile was picked by sweeping INT4 eval accuracy (see
-# analysis/sweep_int4.py and analysis/int4_percentile_sweep.png) - accuracy
-# peaks around there and falls off sharply above ~95 as clipping starts
-# eating real signal, not just outliers.
+# 90th percentile was picked by sweeping accuracy on the CALIBRATION split
+# (CALIB_X/_CALIB_Y) only - never on EVAL_X/EVAL_Y, to avoid tuning a
+# hyperparameter on the held-out set. See analysis/sweep_int4.py and
+# analysis/int4_percentile_sweep.png: accuracy peaks around 90 and falls off
+# sharply above ~95 as clipping starts eating real signal, not just outliers.
 INT4_CLIP_PERCENTILE = 90
 
 

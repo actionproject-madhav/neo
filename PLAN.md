@@ -3,7 +3,7 @@
 ## Design decisions locked in
 - **Symmetric quantization**: no zero-point. Per-row scale `s_c = max_abs_c / qmax` where `qmax = 2^(bits-1) - 1` (127 for int8, 7 for int4). Integer weights: `clip(round(W[c] / s_c), -qmax-1, qmax)`, dtype `int8` (int4 values still stored in an `int8` container since numpy has no native int4).
 - **Scale storage**: scales stored/counted as `float16` (16 bits each), not `float32` — required to clear the 3.5x compression bar (`float32` scales only get ~3.43x for this model's shape, C=12/D=24).
-- **Calibration**: self-calibrate from `W`'s own per-row `|W|` distribution (max-abs for INT8; percentile clip for INT4). `calib` param accepted but optional/unused by default, since visible tests never pass it and `CALIB_X`'s shape doesn't map onto per-row weight calibration.
+- **Calibration**: max-abs per row for INT8. For INT4, percentile-clip per row, with the percentile value chosen via a proper calibration/eval split - tuned on `CALIB_X`/`_CALIB_Y` only, verified once on `EVAL_X`/`EVAL_Y` (never tuned on eval). `calib` param accepted but unused inside `quantize()` itself: two label-free heuristics (reconstruction error, agreement with FP32 predictions) were tried and both picked the wrong percentile, so the percentile is a fixed constant derived offline rather than computed dynamically from `calib` per call.
 - **qmodel container**: a `dataclass` `QModel(q_weight: int8 array, scale: per-row array, bits: int)`.
 
 ## Phase 1 — Core INT8 path: `quantize()` + `forward_quant()`

@@ -32,19 +32,19 @@ def _build():
 
 CENTROIDS, W_FP32, B_FP32 = _build()
 
-
+#these are hte logits of the model
 def logits(X, W, b):
     return X @ W.T + b
 
-
+#this does the prediction of the model
 def predict(X, W, b):
     return np.argmax(logits(X, W, b), axis=1)
 
-
+#this is simply the base accuracy
 def accuracy(pred, y):
     return float(np.mean(pred == y))
 
-
+#generate the data for model with noise
 def gen_data(n, seed, noise=0.1):
     rng = np.random.default_rng(seed)
     y = rng.integers(0, C, size=n)

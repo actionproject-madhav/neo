@@ -8,6 +8,15 @@ import numpy as np
 # per-row scale factor and clears the bar comfortably.
 SCALE_BITS = 16
 
+# Below INT8, a few sparse per-row outliers would otherwise dictate the whole
+# row's scale and crush the other weights into a handful of buckets. Clipping
+# the calibration range to a percentile of |W| per row instead lets outliers
+# saturate while giving the bulk of the weights the resolution they need.
+# 90th percentile was picked by sweeping INT4 eval accuracy (see
+# int4_percentile_sweep.png) - accuracy peaks around there and falls off
+# sharply above ~95 as clipping starts eating real signal, not just outliers.
+INT4_CLIP_PERCENTILE = 90
+
 
 @dataclass
 class QModel:
@@ -31,17 +40,26 @@ def quantize(W, bits=8, per_channel=True, calib=None):
     scales per output channel (per row of W) is what keeps accuracy when the
     rows span different magnitudes.
 
-    Symmetric quantization is used (no zero-point): each row's scale maps its
-    max-abs weight to the top of the integer range, and dequantization is a
-    simple `q * scale`.
+    Symmetric quantization is used (no zero-point): each row's scale maps a
+    calibrated max-abs range to the top of the integer range, and
+    dequantization is a simple `q * scale`.
+
+    For low bit-widths (INT4), the calibration range is clipped to a
+    percentile of |W| per row instead of the true max, so a few sparse
+    outlier weights don't blow the whole row's precision budget (see
+    INT4_CLIP_PERCENTILE). INT8 stays near-lossless with the true max.
     """
     W = np.asarray(W, dtype=np.float64)
     qmin, qmax = _qrange(bits)
+    absW = np.abs(W)
+    clip_percentile = INT4_CLIP_PERCENTILE if bits <= 4 else 100
 
-    if per_channel:
-        amax = np.abs(W).max(axis=1)          # (C,)
+    if clip_percentile >= 100:
+        amax = absW.max(axis=1) if per_channel else np.full(W.shape[0], absW.max())
+    elif per_channel:
+        amax = np.percentile(absW, clip_percentile, axis=1)
     else:
-        amax = np.full(W.shape[0], np.abs(W).max())
+        amax = np.full(W.shape[0], np.percentile(absW, clip_percentile))
 
     # Avoid divide-by-zero for an all-zero row; scale doesn't matter then
     # since the row's integer weights will all be 0 anyway.
